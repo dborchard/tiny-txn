@@ -11,11 +11,11 @@ type Scheduler interface {
 }
 
 type message struct {
-	typ      messageType
-	ts       uint64
-	resCh    chan *result
-	readMap  map[string]uint64 // key -> ts
-	writeMap map[string][]byte // key -> value
+	typ        messageType
+	ts         uint64
+	responseCh chan *result
+	readMap    map[string]uint64 // key -> ts
+	writeMap   map[string][]byte // key -> value
 }
 
 type result struct {
