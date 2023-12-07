@@ -11,6 +11,9 @@ type Transaction interface {
 	Get(key string) (val []byte, err error)
 	Del(key string) error
 
+	ApplySnapshot(data []byte) error
+	Snapshot() ([]byte, error)
+
 	Commit() error
 	Rollback() error
 }
