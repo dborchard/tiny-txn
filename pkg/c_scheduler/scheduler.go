@@ -108,7 +108,7 @@ func (s *TxnScheduler) Stop() {
 	<-s.stopCh
 }
 
-func (s *TxnScheduler) Start() uint64 {
+func (s *TxnScheduler) Begin() uint64 {
 	ts := atomic.LoadUint64(&s.ts)
 	s.reqCh <- &request{typ: Start, ts: ts}
 	return ts

@@ -31,7 +31,7 @@ func NewTxn(ro bool, mvccStore mvcc.MVCC, wal wal.Wal, schdlr scheduler.Schedule
 		wal:       wal,
 		ro:        ro,
 		scheduler: schdlr,
-		readTs:    schdlr.Start(),
+		readTs:    schdlr.Begin(),
 		readMap:   make(map[string]uint64),
 		writeMap:  make(map[string][]byte),
 	}

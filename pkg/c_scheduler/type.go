@@ -1,10 +1,10 @@
 package scheduler
 
 type Scheduler interface {
-	Run()          // starts the go routine
-	Start() uint64 // starts the gc cycle + message processing
-	Stop()         // stops the go routine, gc cycle, and message processing
+	Run() // starts the go routine
+	Stop()
 
+	Begin() uint64
 	Commit(uint64, map[string]uint64, map[string][]byte) (uint64, error)
 	Done(uint64) error
 }
