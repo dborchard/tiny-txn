@@ -1,9 +1,10 @@
 package client
 
 import (
+	"fmt"
 	"tiny_txn/pkg/a_misc/errmsg"
 	scheduler "tiny_txn/pkg/c_scheduler"
-	storage "tiny_txn/pkg/e_mvcc"
+	mvcc "tiny_txn/pkg/e_mvcc"
 	"tiny_txn/pkg/h_wal"
 )
 
@@ -11,6 +12,7 @@ var _ Transaction = new(Txn)
 
 type Txn struct {
 	ro bool // read only
+	sz int  // transaction size
 
 	readTs  uint64 // read timestamp
 	writeTs uint64 // write timestamp
@@ -18,9 +20,21 @@ type Txn struct {
 	readMap  map[string]uint64 // key -> read timestamp
 	writeMap map[string][]byte // key -> value
 
-	mvcc      storage.MVCC
-	wal       wal.Writer
+	mvcc      mvcc.MVCC
+	wal       wal.Wal
 	scheduler scheduler.Scheduler
+}
+
+func New(ro bool, mvccStore mvcc.MVCC, wal wal.Wal, schdlr scheduler.Scheduler) Transaction {
+	return &Txn{
+		mvcc:      mvccStore,
+		wal:       wal,
+		ro:        ro,
+		scheduler: schdlr,
+		readTs:    schdlr.Start(),
+		readMap:   make(map[string]uint64),
+		writeMap:  make(map[string][]byte),
+	}
 }
 
 func (tx *Txn) Set(key string, val []byte) error {
@@ -94,6 +108,35 @@ func (tx *Txn) Commit() error {
 		return err
 	}
 
+	// write to wal
+	log := make([]byte, tx.sz)
+	if err = tx.wal.Append(log); err != nil {
+		fmt.Printf("transaction start failed: %v\n", err)
+	}
+
+	// write to mvcc store
+	for k, v := range tx.writeMap {
+		if v == nil {
+			if err = tx.mvcc.Del(k, tx.writeTs); err != nil {
+				return err
+			}
+		} else if err = tx.mvcc.Set(k, tx.writeTs, v); err != nil {
+			return err
+		}
+	}
+	if err = tx.wal.Append(log); err != nil {
+		fmt.Printf("transaction append record failed: %v\n", err)
+	}
+
+	// update cache
+	err = tx.wal.SyncCache()
+	if err != nil {
+		return err
+	}
+
+	if err = tx.scheduler.Done(tx.writeTs); err != nil {
+		return err
+	}
 	return nil
 }
 

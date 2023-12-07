@@ -1,10 +1,12 @@
 package wal
 
-type Writer interface {
+type Wal interface {
 	Append([]byte) error
 
 	StartCKPT() error
 	EndCKPT() error
+
+	SyncCache() error
 
 	Close() error
 }
