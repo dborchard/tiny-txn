@@ -8,5 +8,7 @@ type Wal interface {
 
 	SyncCache() error
 
+	Recover() (uint64, error)
+
 	Close() error
 }

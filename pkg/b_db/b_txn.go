@@ -25,7 +25,7 @@ type Txn struct {
 	scheduler scheduler.Scheduler
 }
 
-func New(ro bool, mvccStore mvcc.MVCC, wal wal.Wal, schdlr scheduler.Scheduler) Transaction {
+func NewTxn(ro bool, mvccStore mvcc.MVCC, wal wal.Wal, schdlr scheduler.Scheduler) Transaction {
 	return &Txn{
 		mvcc:      mvccStore,
 		wal:       wal,

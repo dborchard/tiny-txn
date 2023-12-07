@@ -11,8 +11,9 @@ import (
 )
 
 type TxnScheduler struct {
-	ts             uint64
-	minTs          uint64 // min ts
+	ts    uint64
+	minTs uint64 // min ts
+
 	beginTsMarker  tsmarker.BeginTsMarker
 	commitTsMarker tsmarker.CommitTsMarker
 
