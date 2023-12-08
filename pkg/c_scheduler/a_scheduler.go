@@ -1,129 +1,110 @@
 package scheduler
 
 import (
-	"sync/atomic"
-	"time"
+	"context"
+	"sync"
 	"tiny_txn/pkg/a_misc/errmsg"
-	tsmarker "tiny_txn/pkg/d_ts_waiter"
-	cache "tiny_txn/pkg/f_cache"
-	checkpoint "tiny_txn/pkg/g_checkpoint"
-	wal "tiny_txn/pkg/h_wal"
+	waitmgr "tiny_txn/pkg/e_waitmgr"
 )
 
 type TsoScheduler struct {
-	ts    uint64
-	minTs uint64 // min ts
+	clockLock     sync.Mutex
+	nextTimestamp uint64
 
-	beginTsWaiter  tsmarker.BeginTsMarker
-	commitTsWaiter tsmarker.CommitTsMarker
-
-	stopCh       chan struct{} // for halting until the current transaction is done.
-	reqCh        chan *request
-	checkPointer checkpoint.CheckPointer
+	txnExecutor     *TxnExecutor
+	beginTsWaitMgr  *waitmgr.WaitMgr
+	commitTsWaitMgr *waitmgr.WaitMgr
+	committedTxns   map[string]committedTxn
 }
 
-var _ Scheduler = &TsoScheduler{}
-
-func New(ts uint64, w wal.Wal) Scheduler {
-	return &TsoScheduler{
-		ts:    ts,
-		minTs: ts,
-
-		stopCh:         make(chan struct{}),
-		beginTsWaiter:  tsmarker.NewBegin(),
-		commitTsWaiter: tsmarker.NewCommit(),
-		reqCh:          make(chan *request, 1024),
-		checkPointer: &checkpoint.DiskCheckPointer{
-			Started: true,
-			Ts:      time.Now(),
-
-			Wal:   w,
-			Cache: cache.New(),
-		},
-	}
-}
-
-func (s *TsoScheduler) Run() {
-	ticker := time.NewTicker(1 * time.Second)
-	for {
-		select {
-		case <-s.stopCh:
-			s.stopCh <- struct{}{}
-			return
-		case m := <-s.reqCh:
-			s.process(m)
-		case <-ticker.C:
-			s.gc()
-		}
-	}
-}
-
-func (s *TsoScheduler) process(m *request) {
-	switch m.typ {
-	case Start:
-		s.beginTsWaiter.Add(m.ts)
-	case Done:
-		err := s.checkPointer.End(m.ts)
-		m.responseCh <- &response{err: err}
-	case Commit:
-		var err error
-		var nextTs uint64
-
-		err = s.hasConflict(m)
-		if err != nil {
-			m.responseCh <- &response{err: err}
-		}
-
-		nextTs = atomic.AddUint64(&s.ts, 1)
-		for k, _ := range m.writeMap {
-			s.commitTsWaiter.Add(k, nextTs)
-		}
-
-		if s.beginTsWaiter.Del(m.ts) {
-			s.minTs = m.ts
-		}
-		m.responseCh <- &response{err, nextTs}
-	}
-}
-
-func (s *TsoScheduler) hasConflict(m *request) error {
-	if len(m.reads) == 0 {
-		return nil
-	}
-
-	for key, rts := range m.reads {
-		if commit, has := s.commitTsWaiter.Get(key); has && commit.Ts > rts {
-			return errmsg.TransactionConflict
-		}
-	}
-	return nil
-}
-
+//	func New(ts uint64, w wal.Wal) Scheduler {
+//		return &TsoScheduler{
+//			ts:    ts,
+//			minTs: ts,
+//
+//			stopCh:         make(chan struct{}),
+//			beginTsWaiter:  waitmgr.NewBegin(),
+//			commitTsWaiter: waitmgr.NewCommit(),
+//			reqCh:          make(chan *request, 1024),
+//			checkPointer: &checkpoint.DiskCheckPointer{
+//				Started: true,
+//				Ts:      time.Now(),
+//
+//				Wal:   w,
+//				Cache: cache.New(),
+//			},
+//		}
+//	}
 func (s *TsoScheduler) gc() {
-	s.commitTsWaiter.Del(s.minTs)
+	// remove old transactions
+	doneTill := s.beginTsWaitMgr.DoneTill()
+
+	for _, txn := range s.committedTxns {
+		if txn.ts <= doneTill {
+			continue
+		}
+		// delete old transactions
+
+	}
 }
 
 func (s *TsoScheduler) Stop() {
-	s.stopCh <- struct{}{}
-	<-s.stopCh
+	s.beginTsWaitMgr.Stop()
+	s.commitTsWaitMgr.Stop()
+	s.txnExecutor.Stop()
 }
 
 func (s *TsoScheduler) Begin() uint64 {
-	ts := atomic.LoadUint64(&s.ts)
-	s.reqCh <- &request{typ: Start, ts: ts}
-	return ts
+	s.clockLock.Lock()
+	beginTs := s.nextTimestamp - 1
+	s.beginTsWaitMgr.Begin(beginTs)
+	s.clockLock.Unlock()
+
+	_ = s.commitTsWaitMgr.WaitForMark(context.Background(), beginTs)
+	return beginTs
 }
 
 func (s *TsoScheduler) Commit(ts uint64, readCache map[string]uint64, writeCache map[string][]byte) (uint64, error) {
-	responseCh := make(chan *response)
-	s.reqCh <- &request{Commit, ts, responseCh, readCache, writeCache}
-	resp := <-responseCh
-	return resp.ts, resp.err
+
+	if s.hasConflictFor(ts, readCache, writeCache) {
+		return 0, errmsg.TransactionConflict
+	}
+
+	s.clockLock.Lock()
+	defer s.clockLock.Unlock()
+
+	s.beginTsWaitMgr.Finish(ts)
+
+	commitTimestamp := s.nextTimestamp
+	s.nextTimestamp = s.nextTimestamp + 1
+
+	s.beginTsWaitMgr.Finish(commitTimestamp)
+	return commitTimestamp, nil
+}
+
+func (s *TsoScheduler) hasConflictFor(txnTs uint64, readCache map[string]uint64, writeCache map[string][]byte) bool {
+	if len(readCache) == 0 {
+		return false
+	}
+
+	for _, committed := range s.committedTxns {
+		if committed.ts <= txnTs {
+			continue
+		}
+
+		for key, _ := range writeCache {
+			for _, ckey := range committed.keys {
+				if ckey == key {
+					return true
+				}
+			}
+
+		}
+	}
+	return false
 }
 
 func (s *TsoScheduler) Done(ts uint64) error {
-	responseCh := make(chan *response)
-	s.reqCh <- &request{typ: Done, ts: ts, responseCh: responseCh}
-	resp := <-responseCh
-	return resp.err
+	s.beginTsWaitMgr.Finish(ts)
+	return nil
 }

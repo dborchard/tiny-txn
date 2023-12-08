@@ -30,7 +30,7 @@ type response struct {
 	ts  uint64
 }
 
-type versionedKey struct {
-	Key string
-	Ts  uint64
+type committedTxn struct {
+	keys []string
+	ts   uint64
 }

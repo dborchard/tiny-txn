@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"tiny_txn/pkg/a_misc/errmsg"
 	scheduler "tiny_txn/pkg/c_scheduler"
-	mvcc "tiny_txn/pkg/e_mvcc"
-	"tiny_txn/pkg/h_wal"
+	mvcc "tiny_txn/pkg/f_mvcc"
+	"tiny_txn/pkg/i_wal"
 )
 
 var _ Transaction = new(Txn)
@@ -22,18 +22,18 @@ type Txn struct {
 
 	mvcc      mvcc.MVCC
 	wal       wal.Wal
-	scheduler scheduler.Scheduler
+	scheduler scheduler.TsoScheduler
 }
 
 func NewTxn(ro bool, mvccStore mvcc.MVCC, wal wal.Wal, schdlr scheduler.Scheduler) Transaction {
 	return &Txn{
-		mvcc:      mvccStore,
-		wal:       wal,
-		ro:        ro,
-		scheduler: schdlr,
-		readTs:    schdlr.Begin(),
-		readMap:   make(map[string]uint64),
-		writeMap:  make(map[string][]byte),
+		mvcc: mvccStore,
+		wal:  wal,
+		ro:   ro,
+		//scheduler: schdlr,
+		readTs:   schdlr.Begin(),
+		readMap:  make(map[string]uint64),
+		writeMap: make(map[string][]byte),
 	}
 }
 
