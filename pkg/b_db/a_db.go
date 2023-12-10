@@ -3,7 +3,7 @@ package client
 import (
 	scheduler "tiny_txn/pkg/c_scheduler"
 	mvcc "tiny_txn/pkg/f_mvcc"
-	wal "tiny_txn/pkg/i_wal"
+	wal "tiny_txn/pkg/h_wal"
 )
 
 var _ Client = new(DB)

@@ -5,7 +5,7 @@ import (
 	"tiny_txn/pkg/a_misc/errmsg"
 	scheduler "tiny_txn/pkg/c_scheduler"
 	mvcc "tiny_txn/pkg/f_mvcc"
-	"tiny_txn/pkg/i_wal"
+	"tiny_txn/pkg/h_wal"
 )
 
 var _ Transaction = new(Txn)
