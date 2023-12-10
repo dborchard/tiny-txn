@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 	"tiny_txn/pkg/a_misc/errmsg"
-	waitmgr "tiny_txn/pkg/d_waitmgr"
 )
 
 type TxnManager struct {
@@ -13,8 +12,8 @@ type TxnManager struct {
 
 	mu              *sync.Mutex
 	txnExecutor     *TxnExecutor
-	beginTsWaitMgr  *waitmgr.WaitMgr
-	commitTsWaitMgr *waitmgr.WaitMgr
+	beginTsWaitMgr  *WaitMgr
+	commitTsWaitMgr *WaitMgr
 	committedTxns   []CommittedTxn
 }
 
@@ -23,8 +22,8 @@ func New(txnExecutor *TxnExecutor) *TxnManager {
 		nextTs: 1,
 
 		txnExecutor:     txnExecutor,
-		beginTsWaitMgr:  waitmgr.NewTxnSyncManager("begin"),
-		commitTsWaitMgr: waitmgr.NewTxnSyncManager("commit"),
+		beginTsWaitMgr:  NewTxnSyncManager("begin"),
+		commitTsWaitMgr: NewTxnSyncManager("commit"),
 	}
 	mgr.beginTsWaitMgr.Finish(0)
 	mgr.commitTsWaitMgr.Finish(0)

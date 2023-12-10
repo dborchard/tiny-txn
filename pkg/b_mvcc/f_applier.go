@@ -2,7 +2,7 @@ package mvcc
 
 import (
 	"sync"
-	mvstorage "tiny_txn/pkg/e_mv_storage"
+	mvstorage "tiny_txn/pkg/c_storage"
 )
 
 type TxnExecutor struct {

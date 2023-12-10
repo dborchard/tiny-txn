@@ -2,8 +2,8 @@ package checkpoint
 
 import (
 	"time"
-	wal "tiny_txn/pkg/g_wal"
-	cache "tiny_txn/pkg/h_cache"
+	cache "tiny_txn/pkg/d_cache"
+	wal "tiny_txn/pkg/f_wal"
 )
 
 type CheckPointer interface {

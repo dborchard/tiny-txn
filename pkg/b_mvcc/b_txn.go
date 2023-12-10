@@ -2,7 +2,7 @@ package mvcc
 
 import (
 	"tiny_txn/pkg/a_misc/errmsg"
-	mvstorage "tiny_txn/pkg/e_mv_storage"
+	mvstorage "tiny_txn/pkg/c_storage"
 )
 
 var _ Transaction = new(Txn)

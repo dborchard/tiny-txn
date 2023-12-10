@@ -1,7 +1,7 @@
 package mvcc
 
 import (
-	mvstorage "tiny_txn/pkg/e_mv_storage"
+	mvstorage "tiny_txn/pkg/c_storage"
 )
 
 type DB struct {

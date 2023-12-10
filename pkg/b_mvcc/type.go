@@ -1,5 +1,7 @@
 package mvcc
 
+import "sync/atomic"
+
 type Transaction interface {
 	Set(key string, val []byte) error
 	Get(key string) (val []byte, err error)
@@ -37,7 +39,25 @@ type response struct {
 	ts  uint64
 }
 
-type committedTxn struct {
-	keys []string
-	ts   uint64
+type Clock interface {
+	Now() uint64
+}
+
+type Event struct {
+	ts uint64
+
+	waitCh chan struct{}
+	done   bool
+}
+
+type WaitMgr struct {
+	Name     string
+	eventCh  chan Event    // channel for incoming messages
+	stopCh   chan struct{} // channel for stopping the waiter
+	doneTill atomic.Uint64 // max ts of finished txns
+
+	tsHeap        TsHeap         // min heap of txn timestamps
+	pendingCounts map[uint64]int // ts -> txn count
+
+	waiters map[uint64][]chan struct{} // ts -> waitChs
 }
