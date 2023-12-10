@@ -1,4 +1,4 @@
-package scheduler
+package mvcc
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	waitmgr "tiny_txn/pkg/e_waitmgr"
 )
 
-type TsoScheduler struct {
+type TxnManager struct {
 	clockLock     sync.Mutex
 	nextTimestamp uint64
 
@@ -18,7 +18,7 @@ type TsoScheduler struct {
 }
 
 //	func New(ts uint64, w wal.Wal) Scheduler {
-//		return &TsoScheduler{
+//		return &TxnManager{
 //			ts:    ts,
 //			minTs: ts,
 //
@@ -35,7 +35,7 @@ type TsoScheduler struct {
 //			},
 //		}
 //	}
-func (s *TsoScheduler) gc() {
+func (s *TxnManager) gc() {
 	// remove old transactions
 	doneTill := s.beginTsWaitMgr.DoneTill()
 
@@ -48,13 +48,13 @@ func (s *TsoScheduler) gc() {
 	}
 }
 
-func (s *TsoScheduler) Stop() {
+func (s *TxnManager) Stop() {
 	s.beginTsWaitMgr.Stop()
 	s.commitTsWaitMgr.Stop()
 	s.txnExecutor.Stop()
 }
 
-func (s *TsoScheduler) Begin() uint64 {
+func (s *TxnManager) Begin() uint64 {
 	s.clockLock.Lock()
 	beginTs := s.nextTimestamp - 1
 	s.beginTsWaitMgr.Begin(beginTs)
@@ -64,7 +64,7 @@ func (s *TsoScheduler) Begin() uint64 {
 	return beginTs
 }
 
-func (s *TsoScheduler) Commit(ts uint64, readCache map[string]uint64, writeCache map[string][]byte) (uint64, error) {
+func (s *TxnManager) Commit(ts uint64, readCache map[string]uint64, writeCache map[string][]byte) (uint64, error) {
 
 	if s.hasConflictFor(ts, readCache, writeCache) {
 		return 0, errmsg.TransactionConflict
@@ -82,7 +82,7 @@ func (s *TsoScheduler) Commit(ts uint64, readCache map[string]uint64, writeCache
 	return commitTimestamp, nil
 }
 
-func (s *TsoScheduler) hasConflictFor(txnTs uint64, readCache map[string]uint64, writeCache map[string][]byte) bool {
+func (s *TxnManager) hasConflictFor(txnTs uint64, readCache map[string]uint64, writeCache map[string][]byte) bool {
 	if len(readCache) == 0 {
 		return false
 	}
@@ -104,7 +104,7 @@ func (s *TsoScheduler) hasConflictFor(txnTs uint64, readCache map[string]uint64,
 	return false
 }
 
-func (s *TsoScheduler) Done(ts uint64) error {
+func (s *TxnManager) Done(ts uint64) error {
 	s.beginTsWaitMgr.Finish(ts)
 	return nil
 }

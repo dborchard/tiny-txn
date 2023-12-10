@@ -1,4 +1,4 @@
-package scheduler
+package mvcc
 
 import (
 	"sync"
@@ -10,6 +10,16 @@ type TxnExecutor struct {
 	reqCh     chan request
 	stopCh    chan struct{}
 	mvStorage mvstorage.MvStorage
+}
+
+func NewTransactionExecutor(mvStorage mvstorage.MvStorage) *TxnExecutor {
+	transactionExecutor := &TxnExecutor{
+		reqCh:     make(chan request),
+		stopCh:    make(chan struct{}),
+		mvStorage: mvstorage.New(),
+	}
+	go transactionExecutor.Run()
+	return transactionExecutor
 }
 
 func (e *TxnExecutor) Submit(req request) <-chan *response {

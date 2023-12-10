@@ -1,14 +1,13 @@
-package client
+package mvcc
 
 import (
 	"fmt"
 	"tiny_txn/pkg/a_misc/errmsg"
-	scheduler "tiny_txn/pkg/c_scheduler"
 	mvstorage "tiny_txn/pkg/f_mv_storage"
 	"tiny_txn/pkg/h_wal"
 )
 
-var _ Transaction = new(Txn)
+var _ client.Transaction = new(Txn)
 
 type Txn struct {
 	ro bool // read only
@@ -22,10 +21,10 @@ type Txn struct {
 
 	mvStorage mvstorage.MvStorage
 	wal       wal.Wal
-	scheduler scheduler.TsoScheduler
+	scheduler TxnManager
 }
 
-func NewTxn(ro bool, mvStore mvstorage.MvStorage, wal wal.Wal, schdlr scheduler.Scheduler) Transaction {
+func NewTxn(ro bool, mvStore mvstorage.MvStorage, wal wal.Wal, schdlr Scheduler) client.Transaction {
 	return &Txn{
 		mvStorage: mvStore,
 		wal:       wal,
