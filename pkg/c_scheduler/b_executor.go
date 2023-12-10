@@ -2,14 +2,14 @@ package scheduler
 
 import (
 	"sync"
-	mvcc "tiny_txn/pkg/f_mvcc"
+	mvstorage "tiny_txn/pkg/f_mv_storage"
 )
 
 type TxnExecutor struct {
 	sync.Mutex
-	reqCh  chan request
-	stopCh chan struct{}
-	mvcc   mvcc.MVCC
+	reqCh     chan request
+	stopCh    chan struct{}
+	mvStorage mvstorage.MvStorage
 }
 
 func (e *TxnExecutor) Submit(req request) <-chan *response {
@@ -42,7 +42,7 @@ func (e *TxnExecutor) Run() {
 
 func (e *TxnExecutor) apply(req request) error {
 	for key, val := range req.writeMap {
-		err := e.mvcc.Set(key, req.ts, val)
+		err := e.mvStorage.Set(key, req.ts, val)
 		if err != nil {
 			return err
 		}

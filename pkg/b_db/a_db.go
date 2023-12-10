@@ -2,20 +2,20 @@ package client
 
 import (
 	scheduler "tiny_txn/pkg/c_scheduler"
-	mvcc "tiny_txn/pkg/f_mvcc"
+	mvstorage "tiny_txn/pkg/f_mv_storage"
 	wal "tiny_txn/pkg/h_wal"
 )
 
 var _ Client = new(DB)
 
 type DB struct {
-	schd scheduler.Scheduler
-	mvcc mvcc.MVCC
+	schd      scheduler.Scheduler
+	mvStorage mvstorage.MvStorage
 }
 
 func Open() Client {
 
-	mvccStore := mvcc.New()
+	mvStorage := mvstorage.New()
 
 	diskWal := wal.New()
 	ts, err := diskWal.Recover()
@@ -26,8 +26,8 @@ func Open() Client {
 	schd := scheduler.New(ts, diskWal)
 
 	return &DB{
-		mvcc: mvccStore,
-		schd: schd,
+		mvStorage: mvStorage,
+		schd:      schd,
 	}
 }
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"tiny_txn/pkg/a_misc/errmsg"
 	scheduler "tiny_txn/pkg/c_scheduler"
-	mvcc "tiny_txn/pkg/f_mvcc"
+	mvstorage "tiny_txn/pkg/f_mv_storage"
 	"tiny_txn/pkg/h_wal"
 )
 
@@ -20,16 +20,16 @@ type Txn struct {
 	readMap  map[string]uint64 // key -> read timestamp
 	writeMap map[string][]byte // key -> value
 
-	mvcc      mvcc.MVCC
+	mvStorage mvstorage.MvStorage
 	wal       wal.Wal
 	scheduler scheduler.TsoScheduler
 }
 
-func NewTxn(ro bool, mvccStore mvcc.MVCC, wal wal.Wal, schdlr scheduler.Scheduler) Transaction {
+func NewTxn(ro bool, mvStore mvstorage.MvStorage, wal wal.Wal, schdlr scheduler.Scheduler) Transaction {
 	return &Txn{
-		mvcc: mvccStore,
-		wal:  wal,
-		ro:   ro,
+		mvStorage: mvStore,
+		wal:       wal,
+		ro:        ro,
 		//scheduler: schdlr,
 		readTs:   schdlr.Begin(),
 		readMap:  make(map[string]uint64),
@@ -74,8 +74,8 @@ func (tx *Txn) Get(key string) (item []byte, err error) {
 		}
 	}
 
-	// read from mvcc store
-	val, rts, err := tx.mvcc.Get(key, tx.readTs)
+	// read from mvStorage store
+	val, rts, err := tx.mvStorage.Get(key, tx.readTs)
 	if err != nil {
 		return nil, err
 	}
@@ -114,13 +114,13 @@ func (tx *Txn) Commit() error {
 		fmt.Printf("transaction start failed: %v\n", err)
 	}
 
-	// write to mvcc store
+	// write to mvStorage store
 	for k, v := range tx.writeMap {
 		if v == nil {
-			if err = tx.mvcc.Del(k, tx.writeTs); err != nil {
+			if err = tx.mvStorage.Del(k, tx.writeTs); err != nil {
 				return err
 			}
-		} else if err = tx.mvcc.Set(k, tx.writeTs, v); err != nil {
+		} else if err = tx.mvStorage.Set(k, tx.writeTs, v); err != nil {
 			return err
 		}
 	}
