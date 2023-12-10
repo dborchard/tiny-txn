@@ -1,7 +1,5 @@
 package coordinator
 
-// TsHeap
-// https://pkg.go.dev/container/heap
 type TsHeap []uint64
 
 func (h *TsHeap) Len() int           { return len(*h) }
