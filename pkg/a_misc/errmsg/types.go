@@ -8,4 +8,5 @@ var (
 
 	TransactionConflict = errors.New("transaction conflict")
 	ReadOnlyTransaction = errors.New("read-only transaction")
+	EmptyTransaction    = errors.New("empty transaction")
 )
