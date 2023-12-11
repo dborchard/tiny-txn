@@ -1,6 +1,6 @@
 package mvstorage
 
-var _ MvStorage = new(BTreeMvStorage)
+//var _ MvStorage = new(BTreeMvStorage)
 
 type BTreeMvStorage struct {
 }
