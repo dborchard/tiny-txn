@@ -9,11 +9,11 @@ type LocalClock struct {
 
 var _ Clock = (*LocalClock)(nil)
 
-func (h LocalClock) Now() uint64 {
+func (clk LocalClock) Now() uint64 {
 	defer func() {
-		h.Lock()
-		h.nextTs = h.nextTs + 1
-		h.Unlock()
+		clk.Lock()
+		clk.nextTs = clk.nextTs + 1
+		clk.Unlock()
 	}()
-	return h.nextTs
+	return clk.nextTs
 }
