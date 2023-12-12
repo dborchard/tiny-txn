@@ -10,5 +10,6 @@ References from
 - [icecanedb](https://github.com/dr0pdb/icecanedb/blob/344bb713ed76cd931610867523d14ab80d68236b/pkg/inmemory-mvcc/transaction.go#L24)
 - [Apache Omid](https://www.usenix.org/system/files/conference/fast17/fast17-shacham.pdf)
 - [Serializable Snapshot Isolation](https://github.com/db-modules/awesome-dbdev/blob/master/papers/serializable-snapshot-isolation.pdf)
+- [MatrixOrigin](https://github.com/arjunsk/matrixone/blob/c80e5add3048e656aac805ae6849d724cb0309dd/pkg/txn/client/types.go#L173)
 
 ![design](docs/imgs/img1.png)
