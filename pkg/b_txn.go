@@ -1,57 +1,47 @@
-package mvcc
+package pkg
 
-import (
-	"tiny_txn/pkg/a_misc/errmsg"
-	mvstorage "tiny_txn/pkg/c_storage"
-)
-
-var _ Transaction = new(Txn)
+import "fmt"
 
 type Txn struct {
 	ro       bool // read only
 	beginTs  uint64
 	commitTs uint64
 
-	readSet  map[string]uint64 // key -> read timestamp
+	readSet  map[string]uint64 // key -> read ts
 	writeSet map[string][]byte // key -> value
 
-	mvStorage mvstorage.MvStorage
-	mgr       *TxnManager
+	workspace *Workspace
+	oracle    *Oracle
 }
 
-type CommittedTxn struct {
-	commitTs uint64
-	txn      *Txn
-}
-
-func NewTxn(ro bool, mgr *TxnManager) Transaction {
-	return &Txn{
-		mvStorage: mgr.txnExecutor.mvStorage,
+func NewTxn(ro bool, mgr *Oracle) Txn {
+	return Txn{
+		workspace: mgr.txnExecutor.workSpace,
 		ro:        ro,
 		beginTs:   mgr.Begin(),
 		readSet:   make(map[string]uint64),
 		writeSet:  make(map[string][]byte),
-		mgr:       mgr,
+		oracle:    mgr,
 	}
 }
 
 func (tx *Txn) Get(key string) (item []byte, err error) {
 	if len(key) == 0 {
-		return nil, errmsg.KeyIsEmpty
+		return nil, fmt.Errorf("key is empty")
 	}
 
 	// check and read from write cache
 	if !tx.ro {
 		if v, ok := tx.writeSet[key]; ok {
 			if v == nil {
-				return nil, errmsg.NotExist
+				return nil, fmt.Errorf("key not exist")
 			}
 			return v, nil
 		}
 	}
 
 	// read from storage store
-	val, rts, err := tx.mvStorage.Get(key, tx.beginTs)
+	val, rts, err := tx.workspace.get(key, tx.beginTs)
 	if err != nil {
 		return nil, err
 	}
@@ -66,9 +56,9 @@ func (tx *Txn) Get(key string) (item []byte, err error) {
 func (tx *Txn) Set(key string, val []byte) error {
 	switch {
 	case tx.ro:
-		return errmsg.ReadOnlyTransaction
+		return fmt.Errorf("read only transaction")
 	case len(key) == 0:
-		return errmsg.KeyIsEmpty
+		return fmt.Errorf("key is empty")
 	}
 	tx.writeSet[key] = val
 	return nil
@@ -77,9 +67,9 @@ func (tx *Txn) Set(key string, val []byte) error {
 func (tx *Txn) Del(key string) error {
 	switch {
 	case tx.ro:
-		return errmsg.ReadOnlyTransaction
+		return fmt.Errorf("read only transaction")
 	case len(key) == 0:
-		return errmsg.KeyIsEmpty
+		return fmt.Errorf("key is empty")
 	}
 	tx.writeSet[key] = nil
 	return nil
@@ -90,28 +80,24 @@ func (tx *Txn) Commit() error {
 		return nil
 	}
 	if len(tx.writeSet) == 0 {
-		return errmsg.EmptyTransaction
+		return fmt.Errorf("write set is empty")
 	}
 
-	tx.mgr.txnExecutor.Lock()
-	defer tx.mgr.txnExecutor.Unlock()
-
 	var err error
-	tx.commitTs, err = tx.mgr.MayCommit(tx)
+	tx.commitTs, err = tx.oracle.MayCommit(tx)
 	if err != nil {
 		return err
 	}
 
-	responseCh := make(chan *response)
-	tx.mgr.txnExecutor.Submit(request{
-		typ:        Commit,
-		ts:         tx.commitTs,
-		responseCh: responseCh,
-		writeMap:   tx.writeSet,
+	doneCh := make(chan struct{})
+	tx.oracle.txnExecutor.Submit(TsBatch{
+		ts:     tx.commitTs,
+		doneCh: doneCh,
+		batch:  tx.writeSet,
 	})
-	<-responseCh
+	<-doneCh
 
-	tx.mgr.commitTsWaitMgr.Finish(tx.commitTs)
+	tx.oracle.commitTsWaitMgr.Finish(tx.commitTs)
 	return nil
 }
 

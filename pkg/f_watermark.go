@@ -1,8 +1,9 @@
-package mvcc
+package pkg
 
 import (
 	"container/heap"
 	"context"
+	"sync/atomic"
 )
 
 type TsHeap []uint64
@@ -19,15 +20,33 @@ func (h *TsHeap) Pop() any {
 	return x
 }
 
-func NewTxnSyncManager(name string) *WaitMgr {
-	w := &WaitMgr{
+// Event represents a BeginTsEvent, FinishTsEvent or a WaitTsEvent
+type Event struct {
+	ts     uint64
+	done   bool
+	waitCh chan struct{}
+}
+
+type Waiter struct {
+	Name     string
+	eventCh  chan Event    // channel for incoming messages
+	stopCh   chan struct{} // channel for stopping the waiter
+	doneTill atomic.Uint64 // max ts of finished txns
+
+	tsHeap          TsHeap                     // min heap of txn timestamps
+	pendingTxnsAtTs map[uint64]int             // ts -> txn count
+	waitersAtTs     map[uint64][]chan struct{} // ts -> waitChs
+}
+
+func NewWaiter(name string) *Waiter {
+	w := &Waiter{
 		Name:    name,
 		eventCh: make(chan Event),
 		stopCh:  make(chan struct{}),
 
-		pendingCounts: make(map[uint64]int),
-		tsHeap:        make(TsHeap, 0),
-		waiters:       make(map[uint64][]chan struct{}),
+		pendingTxnsAtTs: make(map[uint64]int),
+		tsHeap:          make(TsHeap, 0),
+		waitersAtTs:     make(map[uint64][]chan struct{}),
 	}
 	heap.Init(&w.tsHeap)
 
@@ -35,11 +54,11 @@ func NewTxnSyncManager(name string) *WaitMgr {
 	return w
 }
 
-func (w *WaitMgr) Begin(ts uint64) {
+func (w *Waiter) Begin(ts uint64) {
 	w.eventCh <- Event{ts: ts, done: false}
 }
 
-func (w *WaitMgr) WaitForMark(ctx context.Context, ts uint64) error {
+func (w *Waiter) WaitForMark(ctx context.Context, ts uint64) error {
 	if w.DoneTill() >= ts {
 		return nil
 	}
@@ -55,22 +74,22 @@ func (w *WaitMgr) WaitForMark(ctx context.Context, ts uint64) error {
 	}
 }
 
-func (w *WaitMgr) Finish(ts uint64) {
+func (w *Waiter) Finish(ts uint64) {
 	w.eventCh <- Event{ts: ts, done: true}
 }
 
-func (w *WaitMgr) Stop() {
+func (w *Waiter) Stop() {
 	w.stopCh <- struct{}{}
 }
 
-func (w *WaitMgr) Run() {
+func (w *Waiter) Run() {
 	for {
 		select {
 		case event := <-w.eventCh:
 			if event.waitCh != nil {
-				w.processWait(event)
+				w.processWaitEvent(event)
 			} else {
-				w.processBeginFinish(event)
+				w.processTsEvent(event)
 			}
 		case <-w.stopCh:
 			w.processClose()
@@ -79,22 +98,22 @@ func (w *WaitMgr) Run() {
 	}
 }
 
-func (w *WaitMgr) processWait(event Event) {
+func (w *Waiter) processWaitEvent(event Event) {
 	doneTill := w.doneTill.Load()
 	if doneTill >= event.ts {
 		close(event.waitCh)
 	} else {
-		if _, ok := w.waiters[event.ts]; !ok {
-			w.waiters[event.ts] = []chan struct{}{event.waitCh}
+		if _, ok := w.waitersAtTs[event.ts]; !ok {
+			w.waitersAtTs[event.ts] = []chan struct{}{event.waitCh}
 		} else {
-			w.waiters[event.ts] = append(w.waiters[event.ts], event.waitCh)
+			w.waitersAtTs[event.ts] = append(w.waitersAtTs[event.ts], event.waitCh)
 		}
 	}
 }
 
-func (w *WaitMgr) processBeginFinish(event Event) {
-	{ // 1. update pendingCounts & tsHeap
-		_, ok := w.pendingCounts[event.ts]
+func (w *Waiter) processTsEvent(event Event) {
+	{ // 1. update pendingTxnsAtTs & tsHeap
+		_, ok := w.pendingTxnsAtTs[event.ts]
 		if !ok {
 			heap.Push(&w.tsHeap, event.ts)
 		}
@@ -103,7 +122,7 @@ func (w *WaitMgr) processBeginFinish(event Event) {
 		if event.done {
 			delta = -1
 		}
-		w.pendingCounts[event.ts] += delta
+		w.pendingTxnsAtTs[event.ts] += delta
 	}
 
 	// 2. recalculate globalDoneTill
@@ -111,13 +130,13 @@ func (w *WaitMgr) processBeginFinish(event Event) {
 	globalDoneTill := doneTill
 	for len(w.tsHeap) > 0 {
 		localDoneTill := w.tsHeap[0]
-		if pendingCount := w.pendingCounts[localDoneTill]; pendingCount > 0 {
+		if pendingCount := w.pendingTxnsAtTs[localDoneTill]; pendingCount > 0 {
 			break
 		}
 
-		// update tsHeap & pendingCounts
+		// update tsHeap & pendingTxnsAtTs
 		heap.Pop(&w.tsHeap)
-		delete(w.pendingCounts, localDoneTill)
+		delete(w.pendingTxnsAtTs, localDoneTill)
 
 		// update globalDoneTill
 		globalDoneTill = localDoneTill
@@ -127,28 +146,28 @@ func (w *WaitMgr) processBeginFinish(event Event) {
 		w.doneTill.CompareAndSwap(doneTill, globalDoneTill)
 	}
 
-	// 3. close waiters
-	for ts, waiter := range w.waiters {
+	// 3. close waitersAtTs
+	for ts, waiter := range w.waitersAtTs {
 		if ts <= globalDoneTill {
 			for _, channel := range waiter {
 				close(channel)
 			}
-			delete(w.waiters, ts)
+			delete(w.waitersAtTs, ts)
 		}
 	}
 }
-func (w *WaitMgr) DoneTill() uint64 {
+func (w *Waiter) DoneTill() uint64 {
 	return w.doneTill.Load()
 }
 
-func (w *WaitMgr) processClose() {
+func (w *Waiter) processClose() {
 	close(w.eventCh)
 	close(w.stopCh)
 
-	for timestamp, waiter := range w.waiters {
+	for timestamp, waiter := range w.waitersAtTs {
 		for _, channel := range waiter {
 			close(channel)
 		}
-		delete(w.waiters, timestamp)
+		delete(w.waitersAtTs, timestamp)
 	}
 }

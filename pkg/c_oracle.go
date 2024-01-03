@@ -1,29 +1,34 @@
-package mvcc
+package pkg
 
 import (
 	"context"
+	"fmt"
 	"sync"
-	"tiny_txn/pkg/a_misc/errmsg"
 )
 
-type TxnManager struct {
+type Oracle struct {
 	clockLock *sync.Mutex
 	nextTs    uint64
 
 	mu              *sync.Mutex
 	txnExecutor     *TxnExecutor
-	beginTsWaitMgr  *WaitMgr
-	commitTsWaitMgr *WaitMgr
+	beginTsWaitMgr  *Waiter
+	commitTsWaitMgr *Waiter
 	committedTxns   []CommittedTxn
 }
 
-func New(txnExecutor *TxnExecutor) *TxnManager {
-	mgr := &TxnManager{
+type CommittedTxn struct {
+	commitTs uint64
+	txn      *Txn
+}
+
+func New(txnExecutor *TxnExecutor) *Oracle {
+	mgr := &Oracle{
 		nextTs: 1,
 
 		txnExecutor:     txnExecutor,
-		beginTsWaitMgr:  NewTxnSyncManager("begin"),
-		commitTsWaitMgr: NewTxnSyncManager("commit"),
+		beginTsWaitMgr:  NewWaiter("begin"),
+		commitTsWaitMgr: NewWaiter("commit"),
 	}
 	mgr.beginTsWaitMgr.Finish(0)
 	mgr.commitTsWaitMgr.Finish(0)
@@ -31,7 +36,7 @@ func New(txnExecutor *TxnExecutor) *TxnManager {
 	return mgr
 }
 
-func (s *TxnManager) Begin() uint64 {
+func (s *Oracle) Begin() uint64 {
 	s.clockLock.Lock()
 	beginTs := s.nextTs - 1
 	s.beginTsWaitMgr.Begin(beginTs)
@@ -41,33 +46,33 @@ func (s *TxnManager) Begin() uint64 {
 	return beginTs
 }
 
-func (s *TxnManager) MayCommit(txn *Txn) (uint64, error) {
+func (s *Oracle) MayCommit(txn *Txn) (uint64, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// end beginTs
 	if s.hasConflictFor(txn) {
-		return 0, errmsg.TransactionConflict
+		return 0, fmt.Errorf("txn conflict")
 	}
-
 	s.beginTsWaitMgr.Finish(txn.beginTs)
+
 	s.gc()
 
+	// start commitTs
 	s.clockLock.Lock()
 	defer s.clockLock.Unlock()
 	commitTimestamp := s.nextTs
 	s.nextTs = s.nextTs + 1
-
 	s.committedTxns = append(s.committedTxns, CommittedTxn{
 		commitTs: commitTimestamp,
 		txn:      txn,
 	})
-
 	s.beginTsWaitMgr.Begin(commitTimestamp)
 	return commitTimestamp, nil
 }
 
-func (s *TxnManager) hasConflictFor(txn *Txn) bool {
+func (s *Oracle) hasConflictFor(txn *Txn) bool {
 	for _, committed := range s.committedTxns {
 		if committed.commitTs <= txn.beginTs {
 			continue
@@ -85,7 +90,7 @@ func (s *TxnManager) hasConflictFor(txn *Txn) bool {
 	return false
 }
 
-func (s *TxnManager) gc() {
+func (s *Oracle) gc() {
 	doneTill := s.beginTsWaitMgr.DoneTill()
 	updatedCommittedTxns := make([]CommittedTxn, 0)
 	for _, txn := range s.committedTxns {
@@ -97,7 +102,7 @@ func (s *TxnManager) gc() {
 	s.committedTxns = updatedCommittedTxns
 }
 
-func (s *TxnManager) Close() {
+func (s *Oracle) Close() {
 	s.beginTsWaitMgr.Stop()
 	s.commitTsWaitMgr.Stop()
 	s.txnExecutor.Stop()

@@ -1,16 +1,12 @@
-package mvcc
-
-import (
-	mvstorage "tiny_txn/pkg/c_storage"
-)
+package pkg
 
 type DB struct {
-	manager *TxnManager
+	manager *Oracle
 }
 
 func Open() *DB {
 
-	mvStorage := mvstorage.New()
+	mvStorage := &Workspace{memtable: &MV{}}
 	txnExecutor := NewTransactionExecutor(mvStorage)
 	txnManager := New(txnExecutor)
 
@@ -19,7 +15,7 @@ func Open() *DB {
 
 func (db *DB) Get(key string) (val []byte, err error) {
 	transaction := NewTxn(true, db.manager)
-	defer func(transaction Transaction) {
+	defer func(transaction Txn) {
 		_ = transaction.Commit()
 	}(transaction)
 
@@ -30,7 +26,7 @@ func (db *DB) Get(key string) (val []byte, err error) {
 func (db *DB) Set(key string, val []byte) (err error) {
 	transaction := NewTxn(false, db.manager)
 
-	defer func(transaction Transaction) {
+	defer func(transaction Txn) {
 		err := transaction.Commit()
 		if err != nil {
 			_ = transaction.Rollback()
