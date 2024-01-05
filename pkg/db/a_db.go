@@ -6,19 +6,19 @@ import (
 )
 
 type Db struct {
-	stopped  atomic.Bool
-	oracle   *txn.Oracle
-	executor *txn.Executor
-	mvStore  *txn.MvStore
+	stopped   atomic.Bool
+	scheduler *txn.Scheduler
+	executor  *txn.Executor
+	mvStore   *txn.MvStore
 }
 
 func New() *Db {
 	mvStore := txn.NewMVStore()
 
 	return &Db{
-		oracle:   txn.NewOracle(),
-		executor: txn.NewTransactionExecutor(mvStore),
-		mvStore:  mvStore,
+		scheduler: txn.NewScheduler(),
+		executor:  txn.NewTransactionExecutor(mvStore),
+		mvStore:   mvStore,
 	}
 }
 
@@ -27,10 +27,10 @@ func (db *Db) View(fn func(txn *txn.Txn) error) error {
 		return txn.DbAlreadyStoppedErr
 	}
 
-	readTs := db.oracle.NewReadTs()
+	readTs := db.scheduler.NewReadTs()
 	snapshot := db.mvStore.Snapshot(readTs)
-	newTxn := txn.NewTxn(false, readTs, snapshot, db.oracle, db.executor)
-	defer newTxn.Discard()
+	newTxn := txn.NewTxn(false, readTs, snapshot, db.scheduler, db.executor)
+	defer newTxn.Rollback()
 
 	return fn(newTxn)
 }
@@ -40,10 +40,10 @@ func (db *Db) Update(fn func(txn *txn.Txn) error) error {
 		return txn.DbAlreadyStoppedErr
 	}
 
-	readTs := db.oracle.NewReadTs()
+	readTs := db.scheduler.NewReadTs()
 	snapshot := db.mvStore.Snapshot(readTs)
-	newTxn := txn.NewTxn(true, readTs, snapshot, db.oracle, db.executor)
-	defer newTxn.Discard() // defer newTxn.Discard() to remove the newTxn from the oracle's activeTxns in case of failure.
+	newTxn := txn.NewTxn(true, readTs, snapshot, db.scheduler, db.executor)
+	defer newTxn.Rollback() // defer newTxn.Rollback() to remove the newTxn from the scheduler's activeTxns in case of failure.
 
 	if err := fn(newTxn); err != nil {
 		return err
@@ -53,7 +53,7 @@ func (db *Db) Update(fn func(txn *txn.Txn) error) error {
 
 func (db *Db) Stop() {
 	if db.stopped.CompareAndSwap(false, true) {
-		db.oracle.Stop()
+		db.scheduler.Stop()
 		db.executor.Stop()
 	}
 }

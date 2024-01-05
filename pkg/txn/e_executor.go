@@ -19,11 +19,11 @@ func NewTransactionExecutor(mvStore *MvStore) *Executor {
 	return exec
 }
 
-func (e *Executor) sendToWriteCh(batch ExecutorRequest) <-chan struct{} {
+func (e *Executor) sendToWriteCh(req ExecutorRequest) <-chan struct{} {
 	e.Lock()
 	defer e.Unlock()
-	e.writeCh <- batch
-	return batch.doneCh
+	e.writeCh <- req
+	return req.doneCh
 }
 
 func (e *Executor) Stop() {

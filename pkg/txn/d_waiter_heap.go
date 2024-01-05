@@ -19,18 +19,18 @@ func (h *TsHeap) Pop() any {
 	return x
 }
 
-type MarkerHeap struct {
+type SHeap struct {
 	doneTillTs       atomic.Uint64
 	tsHeap           TsHeap                     // min tsHeap of txn timestamps
 	pendingTxnCounts map[uint64]int             // ts -> txn count
 	waiters          map[uint64][]chan struct{} // ts -> waitChs
 }
 
-func NeMarkerHeap() *MarkerHeap {
+func NewSHeap() *SHeap {
 	var tsHeap TsHeap
 	heap.Init(&tsHeap)
 
-	res := MarkerHeap{
+	res := SHeap{
 		tsHeap:           tsHeap,
 		pendingTxnCounts: make(map[uint64]int),
 		waiters:          make(map[uint64][]chan struct{}),
@@ -39,21 +39,21 @@ func NeMarkerHeap() *MarkerHeap {
 	return &res
 }
 
-func (h *MarkerHeap) AddBeginEvent(ts uint64) {
+func (h *SHeap) AddBeginEvent(ts uint64) {
 	if _, ok := h.pendingTxnCounts[ts]; !ok {
 		heap.Push(&h.tsHeap, ts)
 	}
 	h.pendingTxnCounts[ts] += 1
 }
 
-func (h *MarkerHeap) AddFinishEvent(ts uint64) {
+func (h *SHeap) AddDoneEvent(ts uint64) {
 	if _, ok := h.pendingTxnCounts[ts]; !ok {
 		heap.Push(&h.tsHeap, ts)
 	}
 	h.pendingTxnCounts[ts] += -1
 }
 
-func (h *MarkerHeap) AddWaiter(ts uint64, ch chan struct{}) {
+func (h *SHeap) AddWaiter(ts uint64, ch chan struct{}) {
 	if _, ok := h.waiters[ts]; !ok {
 		h.waiters[ts] = []chan struct{}{ch}
 	} else {
@@ -61,7 +61,7 @@ func (h *MarkerHeap) AddWaiter(ts uint64, ch chan struct{}) {
 	}
 }
 
-func (h *MarkerHeap) CloseWaitersUntil(utilTs uint64) {
+func (h *SHeap) CloseWaitersUntil(utilTs uint64) {
 	for ts, waiter := range h.waiters {
 		if ts <= utilTs {
 			for _, channel := range waiter {
@@ -72,11 +72,11 @@ func (h *MarkerHeap) CloseWaitersUntil(utilTs uint64) {
 	}
 }
 
-func (h *MarkerHeap) GlobalDoneTill() uint64 {
+func (h *SHeap) GlobalDoneTill() uint64 {
 	return h.doneTillTs.Load()
 }
 
-func (h *MarkerHeap) RecalculateGlobalDoneTill() uint64 {
+func (h *SHeap) RecalculateGlobalDoneTill() uint64 {
 	doneTill := h.GlobalDoneTill()
 	globalDoneTill := doneTill
 	for len(h.tsHeap) > 0 {
@@ -85,7 +85,7 @@ func (h *MarkerHeap) RecalculateGlobalDoneTill() uint64 {
 			break
 		}
 
-		// update mHeap & pendingTxnCounts
+		// update sHeap & pendingTxnCounts
 		heap.Pop(&h.tsHeap)
 		delete(h.pendingTxnCounts, localDoneTill)
 

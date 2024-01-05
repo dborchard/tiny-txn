@@ -5,49 +5,48 @@ import (
 	"sync"
 )
 
-type Oracle struct {
+type Scheduler struct {
 	sync.Mutex
 	nextTs uint64
 
-	readMark   *CommitWaiter
-	commitMark *CommitWaiter
+	readWaiter   *Waiter
+	commitWaiter *Waiter
 
 	readyToCommitTxns []ReadyToCommitTxn
 }
 
-func NewOracle() *Oracle {
-	oracle := &Oracle{
-		nextTs:     1,
-		readMark:   NewCommitWaiter(),
-		commitMark: NewCommitWaiter(),
+func NewScheduler() *Scheduler {
+	scheduler := &Scheduler{
+		nextTs:       1,
+		readWaiter:   NewWaiter(),
+		commitWaiter: NewWaiter(),
 	}
 
-	oracle.readMark.Done(oracle.nextTs - 1)
-	oracle.commitMark.Done(oracle.nextTs - 1)
-	return oracle
+	scheduler.readWaiter.Done(scheduler.nextTs - 1)
+	scheduler.commitWaiter.Done(scheduler.nextTs - 1)
+	return scheduler
 }
 
-func (o *Oracle) Stop() {
-	o.readMark.Stop()
-	o.commitMark.Stop()
-
+func (o *Scheduler) Stop() {
+	o.readWaiter.Stop()
+	o.commitWaiter.Stop()
 }
 
-func (o *Oracle) NewReadTs() uint64 {
+func (o *Scheduler) NewReadTs() uint64 {
 	o.Lock()
 	defer o.Unlock()
 
 	beginTimestamp := o.nextTs - 1
-	o.readMark.Begin(beginTimestamp)
+	o.readWaiter.Begin(beginTimestamp)
 
-	err := o.commitMark.WaitFor(context.Background(), beginTimestamp)
+	err := o.commitWaiter.WaitFor(context.Background(), beginTimestamp)
 	if err != nil {
 		panic(err)
 	}
 	return beginTimestamp
 }
 
-func (o *Oracle) NewCommitTs(transaction *Txn) (uint64, error) {
+func (o *Scheduler) NewCommitTs(transaction *Txn) (uint64, error) {
 	o.Lock()
 	defer o.Unlock()
 
@@ -58,23 +57,30 @@ func (o *Oracle) NewCommitTs(transaction *Txn) (uint64, error) {
 	o.DoneRead(transaction)
 	o.gcOldReadyToCommitTxns()
 
+	{
+		// Start Checkpoint
+		// Wal start checkpoint entry
+		// Wal end checkpoint entry
+		// End Checkpoint
+	}
+
 	commitTs := o.nextTs
 	o.nextTs = o.nextTs + 1
 
 	o.addReadyToCommitTxn(transaction, commitTs)
-	o.commitMark.Begin(commitTs)
+	o.commitWaiter.Begin(commitTs)
 	return commitTs, nil
 }
 
-func (o *Oracle) DoneRead(transaction *Txn) {
-	o.readMark.Done(transaction.snapshot.ts)
+func (o *Scheduler) DoneRead(transaction *Txn) {
+	o.readWaiter.Done(transaction.snapshot.ts)
 }
 
-func (o *Oracle) DoneCommit(commitTs uint64) {
-	o.commitMark.Done(commitTs)
+func (o *Scheduler) DoneCommit(commitTs uint64) {
+	o.commitWaiter.Done(commitTs)
 }
 
-func (o *Oracle) hasConflictFor(txn *Txn) bool {
+func (o *Scheduler) hasConflictFor(txn *Txn) bool {
 	for _, readyToCommitTxn := range o.readyToCommitTxns {
 		txnBeginTs := txn.snapshot.ts
 		if readyToCommitTxn.commitTs <= txnBeginTs {
@@ -90,9 +96,9 @@ func (o *Oracle) hasConflictFor(txn *Txn) bool {
 	return false
 }
 
-func (o *Oracle) gcOldReadyToCommitTxns() {
+func (o *Scheduler) gcOldReadyToCommitTxns() {
 	updatedReadyToCommitTxns := o.readyToCommitTxns[:0]
-	lastCommittedTxnTs := o.readMark.DoneTill()
+	lastCommittedTxnTs := o.readWaiter.DoneTill()
 
 	for _, readyToCommitTxn := range o.readyToCommitTxns {
 		if readyToCommitTxn.commitTs <= lastCommittedTxnTs {
@@ -108,7 +114,7 @@ type ReadyToCommitTxn struct {
 	txn      *Txn
 }
 
-func (o *Oracle) addReadyToCommitTxn(txn *Txn, commitTs uint64) {
+func (o *Scheduler) addReadyToCommitTxn(txn *Txn, commitTs uint64) {
 	o.readyToCommitTxns = append(o.readyToCommitTxns, ReadyToCommitTxn{
 		commitTs: commitTs,
 		txn:      txn,
