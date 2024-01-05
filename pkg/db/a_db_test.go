@@ -1,4 +1,4 @@
-package pkg
+package db
 
 import (
 	"fmt"
@@ -7,11 +7,12 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"tiny_txn/pkg/txn"
 )
 
 func TestGetsTheValueOfANonExistingKey(t *testing.T) {
 	db := New()
-	_ = db.View(func(txn *Txn) error {
+	_ = db.View(func(txn *txn.Txn) error {
 		_, exists := txn.Get([]byte("non-existing"))
 		assert.Equal(t, false, exists)
 		return nil
@@ -20,19 +21,19 @@ func TestGetsTheValueOfANonExistingKey(t *testing.T) {
 
 func TestGetsTheValueOfAnExistingKey(t *testing.T) {
 	db := New()
-	err := db.Update(func(txn *Txn) error {
+	err := db.Update(func(txn *txn.Txn) error {
 		_ = txn.Set([]byte("HDD"), []byte("Hard disk"))
 		return nil
 	})
 	assert.Nil(t, err)
 
-	err = db.Update(func(txn *Txn) error {
+	err = db.Update(func(txn *txn.Txn) error {
 		_ = txn.Set([]byte("HDD"), []byte("Hard disk drive"))
 		return nil
 	})
 	assert.Nil(t, err)
 
-	_ = db.View(func(txn *Txn) error {
+	_ = db.View(func(txn *txn.Txn) error {
 		value, exists := txn.Get([]byte("HDD"))
 		assert.Equal(t, true, exists)
 		fmt.Println(string(value.Slice()))
@@ -43,7 +44,7 @@ func TestGetsTheValueOfAnExistingKey(t *testing.T) {
 
 func TestPutsMultipleKeyValuesInATransaction(t *testing.T) {
 	db := New()
-	err := db.Update(func(txn *Txn) error {
+	err := db.Update(func(txn *txn.Txn) error {
 		for count := 1; count <= 100; count++ {
 			_ = txn.Set([]byte("Key:"+strconv.Itoa(count)), []byte("Value:"+strconv.Itoa(count)))
 		}
@@ -51,7 +52,7 @@ func TestPutsMultipleKeyValuesInATransaction(t *testing.T) {
 	})
 	assert.Nil(t, err)
 
-	err = db.Update(func(txn *Txn) error {
+	err = db.Update(func(txn *txn.Txn) error {
 		for count := 1; count <= 100; count++ {
 			_ = txn.Set([]byte("Key:"+strconv.Itoa(count)), []byte("Value#"+strconv.Itoa(count)))
 		}
@@ -59,7 +60,7 @@ func TestPutsMultipleKeyValuesInATransaction(t *testing.T) {
 	})
 	assert.Nil(t, err)
 
-	_ = db.View(func(txn *Txn) error {
+	_ = db.View(func(txn *txn.Txn) error {
 		for count := 1; count <= 100; count++ {
 			value, exists := txn.Get([]byte("Key:" + strconv.Itoa(count)))
 			assert.Equal(t, true, exists)
@@ -76,7 +77,7 @@ func TestInvolvesConflictingTransactions(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		err := db.Update(func(txn *Txn) error {
+		err := db.Update(func(txn *txn.Txn) error {
 			delayCommit := func() {
 				time.Sleep(25 * time.Millisecond)
 			}
@@ -86,12 +87,12 @@ func TestInvolvesConflictingTransactions(t *testing.T) {
 			return nil
 		})
 		assert.Error(t, err)
-		assert.Equal(t, TxnConflictErr, err)
+		assert.Equal(t, txn.TxnConflictErr, err)
 	}()
 
 	go func() {
 		defer wg.Done()
-		err := db.Update(func(transaction *Txn) error {
+		err := db.Update(func(transaction *txn.Txn) error {
 			delayCommit := func() {
 				time.Sleep(10 * time.Millisecond)
 			}

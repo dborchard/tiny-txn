@@ -1,4 +1,4 @@
-package pkg
+package txn
 
 type Txn struct {
 	update    bool

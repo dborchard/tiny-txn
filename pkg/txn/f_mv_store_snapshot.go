@@ -1,4 +1,4 @@
-package pkg
+package txn
 
 type Snapshot struct {
 	ts      uint64
