@@ -29,10 +29,10 @@ func (db *Db) View(fn func(txn *txn.Txn) error) error {
 
 	readTs := db.oracle.NewReadTs()
 	snapshot := db.mvStore.Snapshot(readTs)
-	txn := txn.NewTxn(false, readTs, snapshot, db.oracle, db.executor)
-	defer txn.Discard()
+	newTxn := txn.NewTxn(false, readTs, snapshot, db.oracle, db.executor)
+	defer newTxn.Discard()
 
-	return fn(txn)
+	return fn(newTxn)
 }
 
 func (db *Db) Update(fn func(txn *txn.Txn) error) error {
@@ -42,13 +42,13 @@ func (db *Db) Update(fn func(txn *txn.Txn) error) error {
 
 	readTs := db.oracle.NewReadTs()
 	snapshot := db.mvStore.Snapshot(readTs)
-	txn := txn.NewTxn(true, readTs, snapshot, db.oracle, db.executor)
-	defer txn.Discard() // defer txn.Discard() to remove the txn from the oracle's activeTxns in case of failure.
+	newTxn := txn.NewTxn(true, readTs, snapshot, db.oracle, db.executor)
+	defer newTxn.Discard() // defer newTxn.Discard() to remove the newTxn from the oracle's activeTxns in case of failure.
 
-	if err := fn(txn); err != nil {
+	if err := fn(newTxn); err != nil {
 		return err
 	}
-	return txn.Commit()
+	return newTxn.Commit()
 }
 
 func (db *Db) Stop() {

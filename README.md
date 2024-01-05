@@ -12,3 +12,7 @@ References from
 - [MatrixOrigin](https://github.com/arjunsk/matrixone/blob/c80e5add3048e656aac805ae6849d724cb0309dd/pkg/txn/client/types.go#L173)
 
 ![design](docs/imgs/img2.png)
+
+- Ts Oracle + Executor: Responsible for `serialazable`
+- MV Store: Responsible for `snapshot`
+- Read/Write Set + Snapshot (ie Workspace): Responsible for `isolation`
