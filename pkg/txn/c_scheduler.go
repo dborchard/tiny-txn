@@ -9,8 +9,8 @@ type Scheduler struct {
 	sync.Mutex
 	nextTs uint64
 
-	readWaiter   *Waiter
-	commitWaiter *Waiter
+	readWaiter   *TsWaiter
+	commitWaiter *TsWaiter
 
 	readyToCommitTxns []ReadyToCommitTxn
 }
@@ -18,8 +18,8 @@ type Scheduler struct {
 func NewScheduler() *Scheduler {
 	scheduler := &Scheduler{
 		nextTs:       1,
-		readWaiter:   NewWaiter(),
-		commitWaiter: NewWaiter(),
+		readWaiter:   NewTsWaiter(),
+		commitWaiter: NewTsWaiter(),
 	}
 
 	scheduler.readWaiter.Done(scheduler.nextTs - 1)

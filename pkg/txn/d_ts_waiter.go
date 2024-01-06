@@ -19,31 +19,31 @@ type Event struct {
 	waitCh chan struct{}
 }
 
-type Waiter struct {
+type TsWaiter struct {
 	eventCh chan Event
 	stopCh  chan struct{}
-	sHeap   *SHeap
+	txnHeap *TransactionHeap
 }
 
-func NewWaiter() *Waiter {
-	waiter := &Waiter{
+func NewTsWaiter() *TsWaiter {
+	waiter := &TsWaiter{
 		eventCh: make(chan Event),
 		stopCh:  make(chan struct{}),
-		sHeap:   NewSHeap(),
+		txnHeap: NewTransactionHeap(),
 	}
 	go waiter.Run()
 	return waiter
 }
 
-func (w *Waiter) Begin(timestamp uint64) {
+func (w *TsWaiter) Begin(timestamp uint64) {
 	w.eventCh <- Event{typ: BeginEvent, ts: timestamp}
 }
 
-func (w *Waiter) Done(ts uint64) {
+func (w *TsWaiter) Done(ts uint64) {
 	w.eventCh <- Event{typ: DoneEvent, ts: ts}
 }
 
-func (w *Waiter) WaitFor(ctx context.Context, ts uint64) error {
+func (w *TsWaiter) WaitFor(ctx context.Context, ts uint64) error {
 	if w.DoneTill() >= ts {
 		return nil
 	}
@@ -59,27 +59,27 @@ func (w *Waiter) WaitFor(ctx context.Context, ts uint64) error {
 	}
 }
 
-func (w *Waiter) Stop() {
+func (w *TsWaiter) Stop() {
 	w.stopCh <- struct{}{}
 }
 
-func (w *Waiter) DoneTill() uint64 {
-	return w.sHeap.GlobalDoneTill()
+func (w *TsWaiter) DoneTill() uint64 {
+	return w.txnHeap.GlobalDoneTill()
 }
 
-func (w *Waiter) Run() {
+func (w *TsWaiter) Run() {
 	for {
 		select {
 		case event := <-w.eventCh:
 			switch event.typ {
 			case BeginEvent:
-				w.sHeap.AddBeginEvent(event.ts)
-				globalDoneTill := w.sHeap.RecalculateGlobalDoneTill()
-				w.sHeap.CloseWaitersUntil(globalDoneTill)
+				w.txnHeap.AddBeginEvent(event.ts)
+				globalDoneTill := w.txnHeap.RecalculateGlobalDoneTill()
+				w.txnHeap.CloseWaitersUntil(globalDoneTill)
 			case DoneEvent:
-				w.sHeap.AddDoneEvent(event.ts)
-				globalDoneTill := w.sHeap.RecalculateGlobalDoneTill()
-				w.sHeap.CloseWaitersUntil(globalDoneTill)
+				w.txnHeap.AddDoneEvent(event.ts)
+				globalDoneTill := w.txnHeap.RecalculateGlobalDoneTill()
+				w.txnHeap.CloseWaitersUntil(globalDoneTill)
 			case WaitForEvent:
 				w.processWaitEvent(event)
 			default:
@@ -91,23 +91,23 @@ func (w *Waiter) Run() {
 		}
 	}
 }
-func (w *Waiter) processWaitEvent(event Event) {
+func (w *TsWaiter) processWaitEvent(event Event) {
 	doneTill := w.DoneTill()
 	if doneTill >= event.ts {
 		close(event.waitCh)
 	} else {
-		w.sHeap.AddWaiter(event.ts, event.waitCh)
+		w.txnHeap.AddWaiter(event.ts, event.waitCh)
 	}
 }
 
-func (w *Waiter) processClose() {
+func (w *TsWaiter) processClose() {
 	close(w.eventCh)
 	close(w.stopCh)
 
-	for timestamp, waiter := range w.sHeap.waiters {
+	for timestamp, waiter := range w.txnHeap.waiters {
 		for _, channel := range waiter {
 			close(channel)
 		}
-		delete(w.sHeap.waiters, timestamp)
+		delete(w.txnHeap.waiters, timestamp)
 	}
 }
