@@ -20,16 +20,16 @@ type Event struct {
 }
 
 type TsWaiter struct {
-	eventCh chan Event
-	stopCh  chan struct{}
-	txnHeap *TransactionHeap
+	eventCh    chan Event
+	stopCh     chan struct{}
+	txnTracker *TransactionTracker
 }
 
 func NewTsWaiter() *TsWaiter {
 	waiter := &TsWaiter{
-		eventCh: make(chan Event),
-		stopCh:  make(chan struct{}),
-		txnHeap: NewTransactionHeap(),
+		eventCh:    make(chan Event),
+		stopCh:     make(chan struct{}),
+		txnTracker: NewTransactionTracker(),
 	}
 	go waiter.Run()
 	return waiter
@@ -64,7 +64,7 @@ func (w *TsWaiter) Stop() {
 }
 
 func (w *TsWaiter) DoneTill() uint64 {
-	return w.txnHeap.GlobalDoneTill()
+	return w.txnTracker.GlobalDoneTill()
 }
 
 func (w *TsWaiter) Run() {
@@ -73,13 +73,13 @@ func (w *TsWaiter) Run() {
 		case event := <-w.eventCh:
 			switch event.typ {
 			case BeginEvent:
-				w.txnHeap.AddBeginEvent(event.ts)
-				globalDoneTill := w.txnHeap.RecalculateGlobalDoneTill()
-				w.txnHeap.CloseWaitersUntil(globalDoneTill)
+				w.txnTracker.AddBeginEvent(event.ts)
+				globalDoneTill := w.txnTracker.RecalculateGlobalDoneTill()
+				w.txnTracker.CloseWaitersUntil(globalDoneTill)
 			case DoneEvent:
-				w.txnHeap.AddDoneEvent(event.ts)
-				globalDoneTill := w.txnHeap.RecalculateGlobalDoneTill()
-				w.txnHeap.CloseWaitersUntil(globalDoneTill)
+				w.txnTracker.AddDoneEvent(event.ts)
+				globalDoneTill := w.txnTracker.RecalculateGlobalDoneTill()
+				w.txnTracker.CloseWaitersUntil(globalDoneTill)
 			case WaitForEvent:
 				w.processWaitEvent(event)
 			default:
@@ -96,7 +96,7 @@ func (w *TsWaiter) processWaitEvent(event Event) {
 	if doneTill >= event.ts {
 		close(event.waitCh)
 	} else {
-		w.txnHeap.AddWaiter(event.ts, event.waitCh)
+		w.txnTracker.AddWaiter(event.ts, event.waitCh)
 	}
 }
 
@@ -104,10 +104,10 @@ func (w *TsWaiter) processClose() {
 	close(w.eventCh)
 	close(w.stopCh)
 
-	for timestamp, waiter := range w.txnHeap.waiters {
+	for timestamp, waiter := range w.txnTracker.waiters {
 		for _, channel := range waiter {
 			close(channel)
 		}
-		delete(w.txnHeap.waiters, timestamp)
+		delete(w.txnTracker.waiters, timestamp)
 	}
 }

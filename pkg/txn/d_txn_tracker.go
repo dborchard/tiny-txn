@@ -19,18 +19,18 @@ func (h *TsHeap) Pop() any {
 	return x
 }
 
-type TransactionHeap struct {
+type TransactionTracker struct {
 	doneTillTs       atomic.Uint64
 	tsHeap           TsHeap                     // min tsHeap of txn timestamps
 	pendingTxnCounts map[uint64]int             // ts -> txn count
 	waiters          map[uint64][]chan struct{} // ts -> waitChs
 }
 
-func NewTransactionHeap() *TransactionHeap {
+func NewTransactionTracker() *TransactionTracker {
 	var tsHeap TsHeap
 	heap.Init(&tsHeap)
 
-	res := TransactionHeap{
+	res := TransactionTracker{
 		tsHeap:           tsHeap,
 		pendingTxnCounts: make(map[uint64]int),
 		waiters:          make(map[uint64][]chan struct{}),
@@ -39,21 +39,21 @@ func NewTransactionHeap() *TransactionHeap {
 	return &res
 }
 
-func (h *TransactionHeap) AddBeginEvent(ts uint64) {
+func (h *TransactionTracker) AddBeginEvent(ts uint64) {
 	if _, ok := h.pendingTxnCounts[ts]; !ok {
 		heap.Push(&h.tsHeap, ts)
 	}
 	h.pendingTxnCounts[ts] += 1
 }
 
-func (h *TransactionHeap) AddDoneEvent(ts uint64) {
+func (h *TransactionTracker) AddDoneEvent(ts uint64) {
 	if _, ok := h.pendingTxnCounts[ts]; !ok {
 		heap.Push(&h.tsHeap, ts)
 	}
 	h.pendingTxnCounts[ts] += -1
 }
 
-func (h *TransactionHeap) AddWaiter(ts uint64, ch chan struct{}) {
+func (h *TransactionTracker) AddWaiter(ts uint64, ch chan struct{}) {
 	if _, ok := h.waiters[ts]; !ok {
 		h.waiters[ts] = []chan struct{}{ch}
 	} else {
@@ -61,7 +61,7 @@ func (h *TransactionHeap) AddWaiter(ts uint64, ch chan struct{}) {
 	}
 }
 
-func (h *TransactionHeap) CloseWaitersUntil(utilTs uint64) {
+func (h *TransactionTracker) CloseWaitersUntil(utilTs uint64) {
 	for ts, waiter := range h.waiters {
 		if ts <= utilTs {
 			for _, channel := range waiter {
@@ -72,11 +72,11 @@ func (h *TransactionHeap) CloseWaitersUntil(utilTs uint64) {
 	}
 }
 
-func (h *TransactionHeap) GlobalDoneTill() uint64 {
+func (h *TransactionTracker) GlobalDoneTill() uint64 {
 	return h.doneTillTs.Load()
 }
 
-func (h *TransactionHeap) RecalculateGlobalDoneTill() uint64 {
+func (h *TransactionTracker) RecalculateGlobalDoneTill() uint64 {
 	doneTill := h.GlobalDoneTill()
 	globalDoneTill := doneTill
 	for len(h.tsHeap) > 0 {
@@ -85,7 +85,7 @@ func (h *TransactionHeap) RecalculateGlobalDoneTill() uint64 {
 			break
 		}
 
-		// update txnHeap & pendingTxnCounts
+		// update txnTracker & pendingTxnCounts
 		heap.Pop(&h.tsHeap)
 		delete(h.pendingTxnCounts, localDoneTill)
 

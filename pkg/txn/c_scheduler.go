@@ -9,27 +9,27 @@ type Scheduler struct {
 	sync.Mutex
 	nextTs uint64
 
-	readWaiter   *TsWaiter
-	commitWaiter *TsWaiter
+	readVisibilityWaiter   *TsWaiter
+	commitVisibilityWaiter *TsWaiter
 
 	readyToCommitTxns []ReadyToCommitTxn
 }
 
 func NewScheduler() *Scheduler {
 	scheduler := &Scheduler{
-		nextTs:       1,
-		readWaiter:   NewTsWaiter(),
-		commitWaiter: NewTsWaiter(),
+		nextTs:                 1,
+		readVisibilityWaiter:   NewTsWaiter(),
+		commitVisibilityWaiter: NewTsWaiter(),
 	}
 
-	scheduler.readWaiter.Done(scheduler.nextTs - 1)
-	scheduler.commitWaiter.Done(scheduler.nextTs - 1)
+	scheduler.readVisibilityWaiter.Done(scheduler.nextTs - 1)
+	scheduler.commitVisibilityWaiter.Done(scheduler.nextTs - 1)
 	return scheduler
 }
 
 func (o *Scheduler) Stop() {
-	o.readWaiter.Stop()
-	o.commitWaiter.Stop()
+	o.readVisibilityWaiter.Stop()
+	o.commitVisibilityWaiter.Stop()
 }
 
 func (o *Scheduler) NewReadTs() uint64 {
@@ -37,9 +37,9 @@ func (o *Scheduler) NewReadTs() uint64 {
 	defer o.Unlock()
 
 	beginTimestamp := o.nextTs - 1
-	o.readWaiter.Begin(beginTimestamp)
+	o.readVisibilityWaiter.Begin(beginTimestamp)
 
-	err := o.commitWaiter.WaitFor(context.Background(), beginTimestamp)
+	err := o.commitVisibilityWaiter.WaitFor(context.Background(), beginTimestamp)
 	if err != nil {
 		panic(err)
 	}
@@ -68,16 +68,16 @@ func (o *Scheduler) NewCommitTs(transaction *Txn) (uint64, error) {
 	o.nextTs = o.nextTs + 1
 
 	o.addReadyToCommitTxn(transaction, commitTs)
-	o.commitWaiter.Begin(commitTs)
+	o.commitVisibilityWaiter.Begin(commitTs)
 	return commitTs, nil
 }
 
 func (o *Scheduler) DoneRead(transaction *Txn) {
-	o.readWaiter.Done(transaction.snapshot.ts)
+	o.readVisibilityWaiter.Done(transaction.snapshot.ts)
 }
 
 func (o *Scheduler) DoneCommit(commitTs uint64) {
-	o.commitWaiter.Done(commitTs)
+	o.commitVisibilityWaiter.Done(commitTs)
 }
 
 func (o *Scheduler) hasConflictFor(txn *Txn) bool {
@@ -98,7 +98,7 @@ func (o *Scheduler) hasConflictFor(txn *Txn) bool {
 
 func (o *Scheduler) gcOldReadyToCommitTxns() {
 	updatedReadyToCommitTxns := o.readyToCommitTxns[:0]
-	lastCommittedTxnTs := o.readWaiter.DoneTill()
+	lastCommittedTxnTs := o.readVisibilityWaiter.DoneTill()
 
 	for _, readyToCommitTxn := range o.readyToCommitTxns {
 		if readyToCommitTxn.commitTs <= lastCommittedTxnTs {
