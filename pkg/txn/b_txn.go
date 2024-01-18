@@ -1,7 +1,7 @@
 package txn
 
 type Txn struct {
-	update    bool
+	rw        bool
 	beginTs   uint64
 	scheduler *Scheduler
 	executor  *Executor
@@ -13,9 +13,9 @@ type Txn struct {
 	snapshot *Snapshot
 }
 
-func NewTxn(update bool, beginTs uint64, snap *Snapshot, scheduler *Scheduler, executor *Executor) *Txn {
+func NewTxn(rw bool, beginTs uint64, snap *Snapshot, scheduler *Scheduler, executor *Executor) *Txn {
 	return &Txn{
-		update:    update,
+		rw:        rw,
 		beginTs:   beginTs,
 		snapshot:  snap,
 		scheduler: scheduler,
@@ -34,7 +34,7 @@ func (txn *Txn) Rollback() {
 }
 
 func (txn *Txn) Get(key []byte) (Value, bool) {
-	if txn.update {
+	if txn.rw {
 		if value, ok := txn.writeSet.Get(key); ok {
 			return NewValue(value), true
 		}
@@ -45,7 +45,7 @@ func (txn *Txn) Get(key []byte) (Value, bool) {
 }
 
 func (txn *Txn) Set(key []byte, value []byte) error {
-	if !txn.update {
+	if !txn.rw {
 		return ReadOnlyTxnErr
 	}
 
