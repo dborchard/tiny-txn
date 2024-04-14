@@ -18,3 +18,10 @@ In this project we try to implement `Serializable Snapshot Isolation` from Badge
 - [Serializable Snapshot Isolation Paper](https://github.com/db-modules/awesome-dbdev/blob/master/papers/serializable-snapshot-isolation.pdf)
 - [Write Snapshot Isolation Paper](https://github.com/dbminions/awesome-dbdev/blob/master/papers/write-snapshot-isolation.pdf)
 - [SurrealKV](https://github.com/surrealdb/surrealkv/pull/5/files)
+
+
+### Flow
+
+Reference: [Sarthak Makhija's Blog](https://tech-lessons.in/en/blog/serializable_snapshot_isolation/)
+
+![img.png](img.png)

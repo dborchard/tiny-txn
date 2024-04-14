@@ -85,9 +85,10 @@ func (o *Scheduler) DoneCommit(commitTs uint64) {
 }
 
 func (o *Scheduler) hasConflictFor(txn *Txn) bool {
+	currTxnBeginTs := txn.snapshot.ts
+
 	for _, readyToCommitTxn := range o.readyToCommitTxns {
-		txnBeginTs := txn.snapshot.ts
-		if readyToCommitTxn.commitTs <= txnBeginTs {
+		if readyToCommitTxn.commitTs <= currTxnBeginTs {
 			continue
 		}
 
@@ -102,10 +103,10 @@ func (o *Scheduler) hasConflictFor(txn *Txn) bool {
 
 func (o *Scheduler) gcOldReadyToCommitTxns() {
 	updatedReadyToCommitTxns := o.readyToCommitTxns[:0]
-	lastCommittedTxnTs := o.readTsMarker.DoneTill()
+	lastActiveReadTs := o.readTsMarker.DoneTill()
 
 	for _, readyToCommitTxn := range o.readyToCommitTxns {
-		if readyToCommitTxn.commitTs <= lastCommittedTxnTs {
+		if readyToCommitTxn.commitTs <= lastActiveReadTs {
 			continue
 		}
 		updatedReadyToCommitTxns = append(updatedReadyToCommitTxns, readyToCommitTxn)

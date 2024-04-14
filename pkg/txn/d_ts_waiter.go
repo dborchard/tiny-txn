@@ -91,6 +91,7 @@ func (w *TsWaiter) Run() {
 		}
 	}
 }
+
 func (w *TsWaiter) processWaitEvent(event Event) {
 	doneTill := w.DoneTill()
 	if doneTill >= event.ts {

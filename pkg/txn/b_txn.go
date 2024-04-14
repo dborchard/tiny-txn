@@ -62,15 +62,15 @@ func (txn *Txn) Commit() error {
 	}
 
 	commitTs, err := txn.scheduler.NewCommitTs(txn)
+	if err != nil {
+		return err
+	}
 
 	{
 		// WAL start entry | START
 		// WAL write entry | DATA
 	}
 
-	if err != nil {
-		return err
-	}
 	doneCh := txn.executor.sendToWriteCh(txn.writeSet.ToExecutorReq(commitTs))
 
 	{
