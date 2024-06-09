@@ -7,7 +7,7 @@ import (
 
 type Db struct {
 	stopped   atomic.Bool
-	scheduler *txn.Scheduler
+	scheduler *txn.Oracle
 	executor  *txn.Executor
 	mvStore   *txn.MvStore
 }

@@ -3,7 +3,7 @@ package txn
 type Txn struct {
 	rw        bool
 	beginTs   uint64
-	scheduler *Scheduler
+	scheduler *Oracle
 	executor  *Executor
 	discarded bool
 
@@ -13,7 +13,7 @@ type Txn struct {
 	snapshot *Snapshot
 }
 
-func NewTxn(rw bool, beginTs uint64, snap *Snapshot, scheduler *Scheduler, executor *Executor) *Txn {
+func NewTxn(rw bool, beginTs uint64, snap *Snapshot, scheduler *Oracle, executor *Executor) *Txn {
 	return &Txn{
 		rw:        rw,
 		beginTs:   beginTs,

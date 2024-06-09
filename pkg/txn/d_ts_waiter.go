@@ -19,14 +19,14 @@ type Event struct {
 	waitCh chan struct{}
 }
 
-type TsWaiter struct {
+type WaterMark struct {
 	eventCh    chan Event
 	stopCh     chan struct{}
 	txnTracker *TransactionTracker
 }
 
-func NewTsWaiter() *TsWaiter {
-	waiter := &TsWaiter{
+func NewTsWaiter() *WaterMark {
+	waiter := &WaterMark{
 		eventCh:    make(chan Event),
 		stopCh:     make(chan struct{}),
 		txnTracker: NewTransactionTracker(),
@@ -35,15 +35,15 @@ func NewTsWaiter() *TsWaiter {
 	return waiter
 }
 
-func (w *TsWaiter) Begin(timestamp uint64) {
+func (w *WaterMark) Begin(timestamp uint64) {
 	w.eventCh <- Event{typ: BeginEvent, ts: timestamp}
 }
 
-func (w *TsWaiter) Done(ts uint64) {
+func (w *WaterMark) Done(ts uint64) {
 	w.eventCh <- Event{typ: DoneEvent, ts: ts}
 }
 
-func (w *TsWaiter) WaitFor(ctx context.Context, ts uint64) error {
+func (w *WaterMark) WaitFor(ctx context.Context, ts uint64) error {
 	if w.DoneTill() >= ts {
 		return nil
 	}
@@ -59,15 +59,15 @@ func (w *TsWaiter) WaitFor(ctx context.Context, ts uint64) error {
 	}
 }
 
-func (w *TsWaiter) Stop() {
+func (w *WaterMark) Stop() {
 	w.stopCh <- struct{}{}
 }
 
-func (w *TsWaiter) DoneTill() uint64 {
+func (w *WaterMark) DoneTill() uint64 {
 	return w.txnTracker.GlobalDoneTill()
 }
 
-func (w *TsWaiter) Run() {
+func (w *WaterMark) Run() {
 	for {
 		select {
 		case event := <-w.eventCh:
@@ -92,7 +92,7 @@ func (w *TsWaiter) Run() {
 	}
 }
 
-func (w *TsWaiter) processWaitEvent(event Event) {
+func (w *WaterMark) processWaitEvent(event Event) {
 	doneTill := w.DoneTill()
 	if doneTill >= event.ts {
 		close(event.waitCh)
@@ -101,7 +101,7 @@ func (w *TsWaiter) processWaitEvent(event Event) {
 	}
 }
 
-func (w *TsWaiter) processClose() {
+func (w *WaterMark) processClose() {
 	close(w.eventCh)
 	close(w.stopCh)
 

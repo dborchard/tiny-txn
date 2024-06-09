@@ -5,22 +5,22 @@ import (
 	"sync"
 )
 
-type Scheduler struct {
+type Oracle struct {
 	sync.Mutex
 	nextTs uint64
 
 	// `readTsMarker` marks the visibility(ts) of read operations in a `newTransaction` to other transactions.
-	// Here we don't need TsWaiter as such, as we are not using the `WaitFor` API. However,
+	// Here we don't need WaterMark as such, as we are not using the `WaitFor` API. However,
 	// we are using the `DoneTill` API to get the last completed readTs to remove the old readyToCommitTxns.
-	readTsMarker *TsWaiter
+	readTsMarker *WaterMark
 	// `commitVisibilityWaiter` blocks `newTransaction` to ensure previous commits are visible to new reads.
-	commitVisibilityWaiter *TsWaiter
+	commitVisibilityWaiter *WaterMark
 
 	readyToCommitTxns []ReadyToCommitTxn
 }
 
-func NewScheduler() *Scheduler {
-	scheduler := &Scheduler{
+func NewScheduler() *Oracle {
+	scheduler := &Oracle{
 		nextTs:                 1,
 		readTsMarker:           NewTsWaiter(),
 		commitVisibilityWaiter: NewTsWaiter(),
@@ -31,18 +31,22 @@ func NewScheduler() *Scheduler {
 	return scheduler
 }
 
-func (o *Scheduler) Stop() {
+func (o *Oracle) Stop() {
 	o.readTsMarker.Stop()
 	o.commitVisibilityWaiter.Stop()
 }
 
-func (o *Scheduler) NewReadTs() uint64 {
+func (o *Oracle) NewReadTs() uint64 {
 	o.Lock()
 	defer o.Unlock()
 
 	beginTimestamp := o.nextTs - 1
 	o.readTsMarker.Begin(beginTimestamp)
 
+	// Wait for all txns which have no conflicts, have been assigned a commit
+	// timestamp and are going through the write to value log and LSM tree
+	// process. Not waiting here could mean that some txns which have been
+	// committed would not be read.
 	err := o.commitVisibilityWaiter.WaitFor(context.Background(), beginTimestamp)
 	if err != nil {
 		panic(err)
@@ -50,7 +54,7 @@ func (o *Scheduler) NewReadTs() uint64 {
 	return beginTimestamp
 }
 
-func (o *Scheduler) NewCommitTs(transaction *Txn) (uint64, error) {
+func (o *Oracle) NewCommitTs(transaction *Txn) (uint64, error) {
 	o.Lock()
 	defer o.Unlock()
 
@@ -76,15 +80,15 @@ func (o *Scheduler) NewCommitTs(transaction *Txn) (uint64, error) {
 	return commitTs, nil
 }
 
-func (o *Scheduler) DoneRead(transaction *Txn) {
+func (o *Oracle) DoneRead(transaction *Txn) {
 	o.readTsMarker.Done(transaction.snapshot.ts)
 }
 
-func (o *Scheduler) DoneCommit(commitTs uint64) {
+func (o *Oracle) DoneCommit(commitTs uint64) {
 	o.commitVisibilityWaiter.Done(commitTs)
 }
 
-func (o *Scheduler) hasConflictFor(txn *Txn) bool {
+func (o *Oracle) hasConflictFor(txn *Txn) bool {
 	currTxnBeginTs := txn.snapshot.ts
 
 	for _, readyToCommitTxn := range o.readyToCommitTxns {
@@ -101,7 +105,7 @@ func (o *Scheduler) hasConflictFor(txn *Txn) bool {
 	return false
 }
 
-func (o *Scheduler) gcOldReadyToCommitTxns() {
+func (o *Oracle) gcOldReadyToCommitTxns() {
 	updatedReadyToCommitTxns := o.readyToCommitTxns[:0]
 	lastActiveReadTs := o.readTsMarker.DoneTill()
 
@@ -119,7 +123,7 @@ type ReadyToCommitTxn struct {
 	txn      *Txn
 }
 
-func (o *Scheduler) addReadyToCommitTxn(txn *Txn, commitTs uint64) {
+func (o *Oracle) addReadyToCommitTxn(txn *Txn, commitTs uint64) {
 	o.readyToCommitTxns = append(o.readyToCommitTxns, ReadyToCommitTxn{
 		commitTs: commitTs,
 		txn:      txn,
