@@ -3,7 +3,7 @@ package txn
 type Txn struct {
 	rw        bool
 	beginTs   uint64
-	scheduler *Oracle
+	oracle    *Oracle
 	executor  *Executor
 	discarded bool
 
@@ -15,13 +15,13 @@ type Txn struct {
 
 func NewTxn(rw bool, beginTs uint64, snap *Snapshot, scheduler *Oracle, executor *Executor) *Txn {
 	return &Txn{
-		rw:        rw,
-		beginTs:   beginTs,
-		snapshot:  snap,
-		scheduler: scheduler,
-		executor:  executor,
-		readSet:   make([][]byte, 0),
-		writeSet:  &Batch{},
+		rw:       rw,
+		beginTs:  beginTs,
+		snapshot: snap,
+		oracle:   scheduler,
+		executor: executor,
+		readSet:  make([][]byte, 0),
+		writeSet: &Batch{},
 	}
 }
 
@@ -30,7 +30,7 @@ func (txn *Txn) Rollback() {
 		return
 	}
 	txn.discarded = true
-	txn.scheduler.DoneRead(txn)
+	txn.oracle.DoneRead(txn)
 }
 
 func (txn *Txn) Get(key []byte) (Value, bool) {
@@ -61,7 +61,7 @@ func (txn *Txn) Commit() error {
 		return EmptyTxnErr
 	}
 
-	commitTs, err := txn.scheduler.NewCommitTs(txn)
+	commitTs, err := txn.oracle.NewCommitTs(txn)
 	if err != nil {
 		return err
 	}
@@ -77,8 +77,8 @@ func (txn *Txn) Commit() error {
 		// WAL commit entry | END
 	}
 	{
-		<-doneCh                           // wait here for write to be done.
-		txn.scheduler.DoneCommit(commitTs) // update the scheduler's commitTs.
+		<-doneCh                        // wait here for write to be done.
+		txn.oracle.DoneCommit(commitTs) // update the oracle's commitTs.
 	}
 
 	return nil
