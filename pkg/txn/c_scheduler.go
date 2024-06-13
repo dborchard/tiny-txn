@@ -93,6 +93,7 @@ func (o *Oracle) hasConflictFor(txn *Txn) bool {
 
 	for _, readyToCommitTxn := range o.readyToCommitTxns {
 		if readyToCommitTxn.commitTs <= currTxnBeginTs {
+			// skip txns which doesn't have temporal overlap
 			continue
 		}
 
@@ -111,6 +112,7 @@ func (o *Oracle) gcOldReadyToCommitTxns() {
 
 	for _, readyToCommitTxn := range o.readyToCommitTxns {
 		if readyToCommitTxn.commitTs <= lastActiveReadTs {
+			// skip adding txns who are older than the last active readTs
 			continue
 		}
 		updatedReadyToCommitTxns = append(updatedReadyToCommitTxns, readyToCommitTxn)
